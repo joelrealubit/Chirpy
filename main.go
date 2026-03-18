@@ -14,6 +14,8 @@ func main(){
 		Handler: mux,
 
 	}
+	fileServer := http.FileServer(http.Dir("."))
+	mux.Handle("GET /", fileServer)
 
 
 	if err:=server.ListenAndServe(); err !=nil {
