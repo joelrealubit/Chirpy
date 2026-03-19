@@ -25,10 +25,15 @@ func healthzHandler (w http.ResponseWriter ,req *http.Request) {
 	w.Write([]byte("OK"))
 }
 
-func (cfg *apiConfig) counterHandler(w http.ResponseWriter, req *http.Request){
+func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, req *http.Request){
 	
-	msg := fmt.Sprintf("Hits: %d",cfg.fileserverHits.Load())
-	w.Header().Set("Content-type", "text/plain; charset=utf-8")
+	msg := fmt.Sprintf(`<html> 
+			<body>
+				<h1>Welcome, Chirpy Admin</h1>
+				<p>Chirpy has been visited %d times!</p>
+			</body>
+			</html>`, cfg.fileserverHits.Load())
+	w.Header().Set("Content-type", "text/html")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write([]byte(msg))
 }
@@ -62,11 +67,11 @@ func main(){
 	
 	
 	//mux.Handle("GET /app/", http.StripPrefix("/app", fileServer))
-	mux.HandleFunc("/healthz/",healthzHandler )
+	mux.HandleFunc("GET /api/healthz",healthzHandler )
 
-	mux.HandleFunc("/metrics/", apiCfg.counterHandler)
+	mux.HandleFunc("GET /admin/metrics", apiCfg.metricsHandler)
 
-	mux.HandleFunc("/reset/", apiCfg.resetHandler)
+	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
 
 	if err:=server.ListenAndServe(); err !=nil {
 		panic(fmt.Sprintf("could not start server: %s", err.Error()))
