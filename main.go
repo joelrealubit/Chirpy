@@ -12,15 +12,15 @@ type apiConfig struct {
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-	cfg.fileserverHits.Add(10)
+	cfg.fileserverHits.Add(1)
 	return next
 }
-func getMiddleware(handler http.Handler) http.HandlerFunc {
-	return func(w http.ResponseWriter,r *http.Request){
-			w.Header().Set("Cache-Control", "no-cache")
-			handler.ServeHTTP(w, r)
-		}
-}
+// func getMiddleware(handler http.Handler) http.HandlerFunc {
+// 	return func(w http.ResponseWriter,r *http.Request){
+// 			w.Header().Set("Cache-Control", "no-cache")
+// 			handler.ServeHTTP(w, r)
+// 		}
+// }
 func healthzHandler (w http.ResponseWriter ,req *http.Request) {
 	w.Header().Set("Content-type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -57,18 +57,18 @@ func main(){
 	}
 	
 
-	apiCfg := apiConfig{}
+	var apiCfg apiConfig
 
 	fileServer := http.FileServer(http.Dir("."))
-	mux.Handle("/app/", http.StripPrefix("/app", apiCfg.middlewareMetricsInc(getMiddleware(fileServer))))
+	mux.Handle("/app/", http.StripPrefix("/app", apiCfg.middlewareMetricsInc(fileServer)))
 	
 	
 	//mux.Handle("GET /app/", http.StripPrefix("/app", fileServer))
-	mux.HandleFunc("/healthz",healthzHandler )
+	mux.HandleFunc("/healthz/",healthzHandler )
 
-	mux.HandleFunc("/metrics", apiCfg.counterHandler)
+	mux.HandleFunc("/metrics/", apiCfg.counterHandler)
 
-	mux.HandleFunc("/reset", apiCfg.resetHandler)
+	mux.HandleFunc("/reset/", apiCfg.resetHandler)
 
 	if err:=server.ListenAndServe(); err !=nil {
 		panic(fmt.Sprintf("could not start server: %s", err.Error()))
