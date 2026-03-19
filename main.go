@@ -12,15 +12,13 @@ type apiConfig struct {
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-	cfg.fileserverHits.Add(1)
-	return next
+	return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request) {
+ 			w.Header().Set("Cache-Control", "no-cache")
+			cfg.fileserverHits.Add(1)
+			next.ServeHTTP(w, r)
+ 		})
 }
-// func getMiddleware(handler http.Handler) http.HandlerFunc {
-// 	return func(w http.ResponseWriter,r *http.Request){
-// 			w.Header().Set("Cache-Control", "no-cache")
-// 			handler.ServeHTTP(w, r)
-// 		}
-// }
+
 func healthzHandler (w http.ResponseWriter ,req *http.Request) {
 	w.Header().Set("Content-type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
