@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -67,7 +68,8 @@ func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type returnVal struct {
-		Valid bool `json:"valid"`
+		Valid bool   `json:"valid"`
+		Body  string `json:"cleaned_body"`
 	}
 
 	respBody := returnVal{
@@ -82,6 +84,35 @@ func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		respBody.Valid = true
 	}
+
+	// curseWords := map[string]string{
+	// 	"kerfuffle": "kerfuffle",
+	// 	"sharbert":  "sharbert",
+	// 	"fornax":    "fornax",
+	// }
+
+	curseWords := []string{"kerfuffle", "sharbert", "fornax"}
+
+	var newBody = bodparam.Body
+	parts := strings.Split(bodparam.Body, " ")
+	for i, part := range parts {
+		for _, curse := range curseWords {
+			if strings.ToLower(part) == curse {
+				parts[i] = "****"
+			}
+		}
+	}
+
+	newBody = strings.Join(parts, " ")
+
+	//}
+
+	if strings.Contains(newBody, "****") {
+		bodparam.Body = newBody
+	}
+
+	respBody.Body = bodparam.Body
+	//check body for curse words, then replace with asterisk
 
 	dat, err := json.Marshal(respBody)
 	if err != nil {
