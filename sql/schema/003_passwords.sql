@@ -1,12 +1,12 @@
 -- +goose Up
-DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS chirps;
+DROP TABLE IF EXISTS users;
 CREATE TABLE users (
     id UUID PRIMARY KEY,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
     email TEXT NOT NULL UNIQUE,
-    hashed_password TEXT DEFAULT "unset"
+    userpassword TEXT NOT NULL
 );
 CREATE TABLE chirps (
     id UUID PRIMARY KEY,
