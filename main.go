@@ -191,13 +191,6 @@ func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request
 
 	var chirpArr []Chirp
 
-	// chirpdat, err := json.Marshal(allChirps)
-	// if err != nil {
-	// 	log.Printf("error: something went wrong marshalling all chirps: %s", err)
-	// 	w.WriteHeader(500)
-	// 	return
-	// }
-
 	for _, ch := range allChirps {
 		var chirpJson Chirp
 		chirpJson.Body = ch.Body
@@ -210,6 +203,40 @@ func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request
 
 	chirpdat, err := json.Marshal(chirpArr)
 
+	w.Write(chirpdat)
+
+}
+
+func (cfg *apiConfig) getAChirpHandler(w http.ResponseWriter, r *http.Request) {
+	id_param := r.PathValue("id")
+	fmt.Printf("id_param = %s", id_param)
+	id, err := uuid.Parse(id_param)
+	if err != nil {
+		log.Printf("error: something went wrong: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	chirp, err := cfg.dbQ.GetAChirp(r.Context(), id)
+	if err != nil {
+		log.Printf("error: something went wrong: %s", err)
+		w.WriteHeader(404)
+		return
+	}
+
+	var chirpJson Chirp
+	chirpJson.Body = chirp.Body
+	chirpJson.CreatedAt = chirp.CreatedAt.Time
+	chirpJson.ID = chirp.ID
+	chirpJson.UpdatedAt = chirp.UpdatedAt.Time
+	chirpJson.UserID = chirp.UserID
+
+	chirpdat, err := json.Marshal(chirpJson)
+	if err != nil {
+		log.Printf("error: something went wrong: %s", err)
+		w.WriteHeader(500)
+		return
+	}
 	w.Write(chirpdat)
 
 }
@@ -308,6 +335,8 @@ func main() {
 	mux.HandleFunc("POST /api/chirps", apiCfg.newChirpHandler)
 
 	mux.HandleFunc("GET /api/chirps/", apiCfg.getAllChirpsHandler)
+
+	mux.HandleFunc("GET /api/chirps/{id}", apiCfg.getAChirpHandler)
 	if err := server.ListenAndServe(); err != nil {
 		panic(fmt.Sprintf("could not start server: %s", err.Error()))
 	}

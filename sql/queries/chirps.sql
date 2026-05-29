@@ -18,5 +18,10 @@ RETURNING *;
 SELECT *
 FROM chirps
 ORDER BY created_at ASC;
+-- name: GetAChirp :one
+select *
+from chirps
+where id = $1
+LIMIT 1;
 -- name: DeleteChirp :exec
 DELETE FROM chirps;
