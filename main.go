@@ -70,12 +70,20 @@ func (cfg *apiConfig) resetHandler(w http.ResponseWriter, req *http.Request) {
 	w.Write([]byte(msg))
 }
 
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
+}
+
 //POST API for adding new chirps
 
-func newChirpHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 	type bodyparam struct {
-		Body   string `json:"body"`
-		UserId string `json:"user_id"`
+		Body   string    `json:"body"`
+		UserID uuid.UUID `json:"user_id"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -131,103 +139,130 @@ func newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		bodparam.Body = newBody
 	}
 
-	respBody.Body = bodparam.Body
 	//check body for curse words, then replace with asterisk
 
-	dat, err := json.Marshal(respBody)
+	// dat, err := json.Marshal(respBody)
+	// if err != nil {
+	// 	log.Printf("Error marshalling JSON: %s", err)
+	// 	w.WriteHeader(500)
+	// 	return
+	// }
+
+	// w.Header().Set("Content-Type", "application/json")
+	// if !respBody.Valid {
+	// 	w.WriteHeader(500)
+	// }
+	// w.Header().Set("Content-Type", "application/json")
+	// w.Write(dat)
+	//
+	createChirpParam := database.CreateChirpParams{}
+	createChirpParam.Body = bodparam.Body
+	createChirpParam.UserID = bodparam.UserID
+	chirp, err := cfg.dbQ.CreateChirp(r.Context(), createChirpParam)
 	if err != nil {
-		log.Printf("Error marshalling JSON: %s", err)
+		log.Printf("error: something went wrong creating user: %s", err)
 		w.WriteHeader(500)
 		return
-	}
+	} else {
+		w.WriteHeader(201)
+		w.Header().Set("Content-Type", "application/json")
+		var chirpJson Chirp
+		chirpJson.ID = chirp.ID
+		chirpJson.CreatedAt = chirp.CreatedAt.Time
+		chirpJson.Body = chirp.Body
+		chirpJson.UpdatedAt = chirp.UpdatedAt.Time
+		chirpJson.UserID = chirp.UserID
 
-	w.Header().Set("Content-Type", "application/json")
-	if !respBody.Valid {
-		w.WriteHeader(500)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(dat)
+		chirpdat, err := json.Marshal(chirpJson)
+		if err != nil {
+			log.Printf("error: something went wrong creating user: %s", err)
+			w.WriteHeader(500)
+			return
+		} else {
+			w.Write(chirpdat)
+		}
 
+	}
 }
 
 // /
 // validate chirp handler
-func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
-	type bodyparam struct {
-		Body string `json:"body"`
-	}
+// func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
+// 	type bodyparam struct {
+// 		Body string `json:"body"`
+// 	}
 
-	decoder := json.NewDecoder(r.Body)
-	bodparam := bodyparam{}
-	err := decoder.Decode(&bodparam)
-	if err != nil {
-		log.Printf("error: something went wrong: %s", err)
-		w.WriteHeader(500)
-		return
-	}
+// 	decoder := json.NewDecoder(r.Body)
+// 	bodparam := bodyparam{}
+// 	err := decoder.Decode(&bodparam)
+// 	if err != nil {
+// 		log.Printf("error: something went wrong: %s", err)
+// 		w.WriteHeader(500)
+// 		return
+// 	}
 
-	type returnVal struct {
-		Valid bool   `json:"valid"`
-		Body  string `json:"cleaned_body"`
-	}
+// 	type returnVal struct {
+// 		Valid bool   `json:"valid"`
+// 		Body  string `json:"cleaned_body"`
+// 	}
 
-	respBody := returnVal{
-		Valid: true,
-	}
+// 	respBody := returnVal{
+// 		Valid: true,
+// 	}
 
-	if len(bodparam.Body) > 140 {
-		log.Printf("error: Chirp is too long")
-		w.WriteHeader(400)
-		respBody.Valid = false
+// 	if len(bodparam.Body) > 140 {
+// 		log.Printf("error: Chirp is too long")
+// 		w.WriteHeader(400)
+// 		respBody.Valid = false
 
-	} else {
-		respBody.Valid = true
-	}
+// 	} else {
+// 		respBody.Valid = true
+// 	}
 
-	// curseWords := map[string]string{
-	// 	"kerfuffle": "kerfuffle",
-	// 	"sharbert":  "sharbert",
-	// 	"fornax":    "fornax",
-	// }
+// 	// curseWords := map[string]string{
+// 	// 	"kerfuffle": "kerfuffle",
+// 	// 	"sharbert":  "sharbert",
+// 	// 	"fornax":    "fornax",
+// 	// }
 
-	curseWords := []string{"kerfuffle", "sharbert", "fornax"}
+// 	curseWords := []string{"kerfuffle", "sharbert", "fornax"}
 
-	var newBody = bodparam.Body
-	parts := strings.Split(bodparam.Body, " ")
-	for i, part := range parts {
-		for _, curse := range curseWords {
-			if strings.ToLower(part) == curse {
-				parts[i] = "****"
-			}
-		}
-	}
+// 	var newBody = bodparam.Body
+// 	parts := strings.Split(bodparam.Body, " ")
+// 	for i, part := range parts {
+// 		for _, curse := range curseWords {
+// 			if strings.ToLower(part) == curse {
+// 				parts[i] = "****"
+// 			}
+// 		}
+// 	}
 
-	newBody = strings.Join(parts, " ")
+// 	newBody = strings.Join(parts, " ")
 
-	//}
+// 	//}
 
-	if strings.Contains(newBody, "****") {
-		bodparam.Body = newBody
-	}
+// 	if strings.Contains(newBody, "****") {
+// 		bodparam.Body = newBody
+// 	}
 
-	respBody.Body = bodparam.Body
-	//check body for curse words, then replace with asterisk
+// 	respBody.Body = bodparam.Body
+// 	//check body for curse words, then replace with asterisk
 
-	dat, err := json.Marshal(respBody)
-	if err != nil {
-		log.Printf("Error marshalling JSON: %s", err)
-		w.WriteHeader(500)
-		return
-	}
+// 	dat, err := json.Marshal(respBody)
+// 	if err != nil {
+// 		log.Printf("Error marshalling JSON: %s", err)
+// 		w.WriteHeader(500)
+// 		return
+// 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if !respBody.Valid {
-		w.WriteHeader(500)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(dat)
+// 	w.Header().Set("Content-Type", "application/json")
+// 	if !respBody.Valid {
+// 		w.WriteHeader(500)
+// 	}
+// 	w.Header().Set("Content-Type", "application/json")
+// 	w.Write(dat)
 
-}
+// }
 
 type User struct {
 	ID        uuid.UUID `json:"id"`
@@ -317,8 +352,8 @@ func main() {
 
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
 
-	mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
-	mux.HandleFunc("POST /api/chirps", newChirpHandler)
+	//mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
+	mux.HandleFunc("POST /api/chirps", apiCfg.newChirpHandler)
 
 	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
 
