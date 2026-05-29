@@ -139,28 +139,21 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		bodparam.Body = newBody
 	}
 
+	respBody.Body = bodparam.Body
 	//check body for curse words, then replace with asterisk
 
-	// dat, err := json.Marshal(respBody)
-	// if err != nil {
-	// 	log.Printf("Error marshalling JSON: %s", err)
-	// 	w.WriteHeader(500)
-	// 	return
-	// }
+	w.Header().Set("Content-Type", "application/json")
+	if !respBody.Valid {
+		w.WriteHeader(500)
+		return
+	}
 
-	// w.Header().Set("Content-Type", "application/json")
-	// if !respBody.Valid {
-	// 	w.WriteHeader(500)
-	// }
-	// w.Header().Set("Content-Type", "application/json")
-	// w.Write(dat)
-	//
 	createChirpParam := database.CreateChirpParams{}
 	createChirpParam.Body = bodparam.Body
 	createChirpParam.UserID = bodparam.UserID
 	chirp, err := cfg.dbQ.CreateChirp(r.Context(), createChirpParam)
 	if err != nil {
-		log.Printf("error: something went wrong creating user: %s", err)
+		log.Printf("error: something went wrong creating chirp: %s", err)
 		w.WriteHeader(500)
 		return
 	} else {
