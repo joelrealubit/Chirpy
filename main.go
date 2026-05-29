@@ -179,6 +179,41 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request) {
+	allChirps, err := cfg.dbQ.GetAllChirps(r.Context())
+	if err != nil {
+		log.Printf("error: something went wrong getting all chirps: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+	w.WriteHeader(200)
+	w.Header().Set("Content-Type", "application/json")
+
+	var chirpArr []Chirp
+
+	// chirpdat, err := json.Marshal(allChirps)
+	// if err != nil {
+	// 	log.Printf("error: something went wrong marshalling all chirps: %s", err)
+	// 	w.WriteHeader(500)
+	// 	return
+	// }
+
+	for _, ch := range allChirps {
+		var chirpJson Chirp
+		chirpJson.Body = ch.Body
+		chirpJson.CreatedAt = ch.CreatedAt.Time
+		chirpJson.ID = ch.ID
+		chirpJson.UpdatedAt = ch.UpdatedAt.Time
+		chirpJson.UserID = ch.UserID
+		chirpArr = append(chirpArr, chirpJson)
+	}
+
+	chirpdat, err := json.Marshal(chirpArr)
+
+	w.Write(chirpdat)
+
+}
+
 // USER STUFF
 type User struct {
 	ID        uuid.UUID `json:"id"`
@@ -268,10 +303,11 @@ func main() {
 
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
 
-	mux.HandleFunc("POST /api/chirps", apiCfg.newChirpHandler)
-
 	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
 
+	mux.HandleFunc("POST /api/chirps", apiCfg.newChirpHandler)
+
+	mux.HandleFunc("GET /api/chirps/", apiCfg.getAllChirpsHandler)
 	if err := server.ListenAndServe(); err != nil {
 		panic(fmt.Sprintf("could not start server: %s", err.Error()))
 	}
