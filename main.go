@@ -22,6 +22,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	dbQ            *database.Queries
 	dbPlatform     string
+	secret         string
 }
 
 // wrap a handler with middleware
@@ -86,17 +87,44 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 	type bodyparam struct {
 		Body   string    `json:"body"`
 		UserID uuid.UUID `json:"user_id"`
+		Token  string    `json:"token"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	bodparam := bodyparam{}
 	err := decoder.Decode(&bodparam)
 	if err != nil {
-		log.Printf("error: something went wrong: %s", err)
+		log.Printf("error: something went wrong decoding to bodparam: %s", err)
 		w.WriteHeader(500)
 		return
 	}
 
+	bearerToken, err := auth.GetBearerToken(r.Header)
+
+	if err != nil {
+		log.Printf("error: unauthorized: %s", err)
+		w.WriteHeader(401)
+		return
+	}
+
+	uid, err := auth.ValidateJWT(bearerToken, cfg.secret)
+	if err != nil {
+		log.Printf("error: unauthorized: %s", err)
+		w.WriteHeader(401)
+		return
+	}
+
+	// log.Printf("UID = %s || BODPARAM.USERID = %s", uid, bodparam.UserID)
+	// if uid != bodparam.UserID {
+	// 	log.Printf("error: UID != BODPARAM.USERID: %s", err)
+	// 	w.WriteHeader(401)
+	// 	return
+	// }
+	// if bodparam.Token != bearerToken {
+	// 	log.Printf("error: unauthorized: %s", err)
+	// 	w.WriteHeader(401)
+	// 	return
+	// }
 	type returnVal struct {
 		Valid bool   `json:"valid"`
 		Body  string `json:"cleaned_body"`
@@ -152,7 +180,7 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 
 	createChirpParam := database.CreateChirpParams{}
 	createChirpParam.Body = bodparam.Body
-	createChirpParam.UserID = bodparam.UserID
+	createChirpParam.UserID = uid
 	chirp, err := cfg.dbQ.CreateChirp(r.Context(), createChirpParam)
 	if err != nil {
 		log.Printf("error: something went wrong creating chirp: %s", err)
@@ -248,6 +276,7 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Token     string    `json:"token"`
 }
 
 // handler for creating user
@@ -312,8 +341,9 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request
 func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	type bodyparam struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email            string `json:"email"`
+		Password         string `json:"password"`
+		ExpiresInSeconds int    `json:"expires_in_seconds"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -327,6 +357,7 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("loginHandler:: param.Email = %s", param.Email)
 	log.Printf("loginHandler:: param.Password = %s", param.Password)
+	log.Printf("loginHandler:: param.ExpiresInSEconds = %d", param.ExpiresInSeconds)
 
 	//retrieve stored password hash from db
 
@@ -356,12 +387,19 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	userJson.Email = user.Email
 	userJson.ID = user.ID
 	userJson.UpdatedAt = user.UpdatedAt.Time
+	//expiresIn, err := strconv.Atoi(param.ExpiresInSeconds)
+	if param.ExpiresInSeconds <= 0 {
+		param.ExpiresInSeconds = 3600
+	}
+	token, err := auth.MakeJWT(userJson.ID, cfg.secret, time.Duration(param.ExpiresInSeconds))
+	userJson.Token = token
 	userdat, err := json.Marshal(userJson)
 	if err != nil {
-		log.Printf("error: something went wrong creating user: %s", err)
+		log.Printf("error: something went wrong creating user: %d", err)
 		w.WriteHeader(500)
 		return
 	}
+
 	w.WriteHeader(200)
 	w.Write(userdat)
 
@@ -372,6 +410,7 @@ func main() {
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
 	dbPLATFORM := os.Getenv("PLATFORM")
+	SECRET := os.Getenv("SECRET")
 
 	if dbPLATFORM != "dev" {
 
@@ -395,6 +434,7 @@ func main() {
 	var apiCfg apiConfig
 	apiCfg.dbQ = dbQueries
 	apiCfg.dbPlatform = dbPLATFORM
+	apiCfg.secret = SECRET
 
 	fileServer := http.FileServer(http.Dir("."))
 	mux.Handle("/app/", http.StripPrefix("/app", apiCfg.middlewareMetricsInc(fileServer)))
