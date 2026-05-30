@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alexedwards/argon2id"
@@ -64,4 +66,21 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	log.Printf("ok uuid = %s", id)
 	return id, err
 
+}
+
+func GetBearerToken(headers http.Header) (string, error) {
+
+	//get authorization header
+
+	raw_authHeader := headers.Get("Authorization")
+
+	if raw_authHeader == "" {
+
+		return raw_authHeader, errors.New("no authorization header")
+
+	}
+
+	authHeader := strings.TrimSpace(strings.TrimPrefix(raw_authHeader, "Bearer"))
+	log.Printf("authHeader = %s", authHeader)
+	return authHeader, nil
 }

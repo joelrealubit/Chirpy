@@ -2,6 +2,7 @@ package auth
 
 import (
 	"log"
+	"net/http"
 	"testing"
 	"time"
 
@@ -66,6 +67,27 @@ func TestInValidJWT_ShouldFail(t *testing.T) {
 	if err == nil {
 		log.Printf("uid = %s", uid)
 		t.Fatal("FAIL expected an error, but got nil")
+	}
+
+}
+
+func TestAuthHeader(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "https://example.com", nil)
+
+	if err != nil {
+		t.Errorf("Error %s", err)
+	}
+	req.Header.Add("Authorization", "Bearer whatevertoken")
+
+	token, err := GetBearerToken(req.Header)
+	if err != nil {
+		t.Errorf("Error %s", err)
+	}
+
+	log.Printf("token = %s", token)
+	if token != "whatevertoken" {
+
+		t.Errorf("Error: wrong header value")
 	}
 
 }
