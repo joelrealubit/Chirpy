@@ -83,7 +83,7 @@ func GetBearerToken(headers http.Header) (string, error) {
 	}
 
 	authHeader := strings.TrimSpace(strings.TrimPrefix(raw_authHeader, "Bearer"))
-	log.Printf("authHeader = %s", authHeader)
+
 	return authHeader, nil
 }
 

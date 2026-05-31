@@ -58,7 +58,7 @@ func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, req *http.Request) {
 func (cfg *apiConfig) resetHandler(w http.ResponseWriter, req *http.Request) {
 
 	if cfg.dbPlatform != "dev" {
-		log.Printf("Forbidden")
+		log.Printf("RESETHANDLER: Forbidden\n")
 		w.WriteHeader(400)
 		return
 	}
@@ -66,7 +66,7 @@ func (cfg *apiConfig) resetHandler(w http.ResponseWriter, req *http.Request) {
 
 	cfg.dbQ.DeleteUsers(req.Context())
 
-	msg := fmt.Sprintf("Hits: %d", cfg.fileserverHits.Load())
+	msg := fmt.Sprintf("RESETHANDLER: Hits: %d\n", cfg.fileserverHits.Load())
 	w.Header().Set("Content-type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write([]byte(msg))
@@ -81,50 +81,96 @@ type Chirp struct {
 	UserID    uuid.UUID `json:"user_id"`
 }
 
-//POST API for adding new chirps
+// POST API for adding new chirps
+func IsJWT(tokenStr string) bool {
+	parts := strings.Split(tokenStr, ".")
+	return len(parts) == 3
+}
 
 func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
+
+	log.Print("#### IN NEW CHIRP HANDLER!!! ####\n")
 	type bodyparam struct {
-		Body   string    `json:"body"`
-		UserID uuid.UUID `json:"user_id"`
-		Token  string    `json:"token"`
+		Body         string    `json:"body"`
+		UserID       uuid.UUID `json:"user_id"`
+		Token        string    `json:"token"`
+		RefreshToken string    `json:"refresh_token"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	bodparam := bodyparam{}
 	err := decoder.Decode(&bodparam)
 	if err != nil {
-		log.Printf("error: something went wrong decoding to bodparam: %s", err)
+		log.Printf("NEWCHIRPHANDLER::error: something went wrong decoding to bodparam: %s\n", err)
 		w.WriteHeader(500)
 		return
 	}
 
+	log.Printf("NEWCHIRPHANDLER R HEADER :: %s", r.Header)
+
 	bearerToken, err := auth.GetBearerToken(r.Header)
+	log.Printf("NEWCHIRPHANDLER:: bearerToken: %s\n", bearerToken)
 
 	if err != nil {
-		log.Printf("error: unauthorized: %s", err)
+		log.Printf("NEWCHIRPHANDLER:: error: something went wrong getting bearer token: %s\n", err)
 		w.WriteHeader(401)
 		return
 	}
+	var userID uuid.UUID
 
-	uid, err := auth.ValidateJWT(bearerToken, cfg.secret)
-	if err != nil {
-		log.Printf("error: unauthorized: %s", err)
-		w.WriteHeader(401)
-		return
+	if !IsJWT(bearerToken) {
+		log.Print("NEWCHIPHANDLER:: BEARERTOKEN IS NOT JWT!")
+
+		refresh_token, err := cfg.dbQ.GetRefreshToken(r.Context(), bearerToken)
+		if refresh_token.Token != bearerToken {
+			log.Print("NEWCHIRPHANDLER :: BEARERTOKEN INVALID")
+			w.WriteHeader(401)
+			return
+		}
+
+		if err != nil {
+			log.Printf("NEWCHIRPHANDLER:: error getting refreshtoken from db: %s\n", err)
+			w.WriteHeader(401)
+			return
+		}
+
+		if refresh_token.ExpiresAt.Valid && refresh_token.ExpiresAt.Time.Before(time.Now()) {
+			log.Printf("NEWCHIRPHANDLER::NOTJWT:: error: refresh token expired: %s", err)
+			w.WriteHeader(401)
+			return
+		}
+
+		if refresh_token.RevokedAt.Valid {
+			log.Printf("NEWCHIRPHANDLER:: NOTJWT:: error: refresh token expired: %s \n", err)
+			w.WriteHeader(401)
+			return
+		}
+		userID = refresh_token.UserID
+		log.Print("NEWCHIRPHANDLER:: NOT JWT OK!!!\n")
+	} else {
+		log.Print("NEWCHIRPHANDLER:: IS JWT!!!\n")
+		uid, err := auth.ValidateJWT(bearerToken, cfg.secret)
+		if err != nil {
+			log.Printf("NEWCHIRPHANDLER:: error: auth.ValidateJWT failed->unauthorized: %s \n", err)
+			w.WriteHeader(401)
+			return
+		}
+		log.Print("NEWCHIRPHANDLER:: ValidateJWT OK!!!")
+		userID = uid
+
+		// log.Printf("NEWCHIRPHANDLER:: UID = %s || BODPARAM.USERID = %s \n", uid, bodparam.UserID)
+		// if uid != bodparam.UserID {
+		// 	log.Printf("NEWCHIRPHANDLER:: error: UID != BODPARAM.USERID: %s\n", err)
+		// 	w.WriteHeader(401)
+		// 	return
+		// }
+		// if bodparam.Token != bearerToken {
+		// 	log.Printf("NEWCHIRPHANDLER:: error: unauthorized: %s\n", err)
+		// 	w.WriteHeader(401)
+		// 	return
+		// }
 	}
 
-	// log.Printf("UID = %s || BODPARAM.USERID = %s", uid, bodparam.UserID)
-	// if uid != bodparam.UserID {
-	// 	log.Printf("error: UID != BODPARAM.USERID: %s", err)
-	// 	w.WriteHeader(401)
-	// 	return
-	// }
-	// if bodparam.Token != bearerToken {
-	// 	log.Printf("error: unauthorized: %s", err)
-	// 	w.WriteHeader(401)
-	// 	return
-	// }
 	type returnVal struct {
 		Valid bool   `json:"valid"`
 		Body  string `json:"cleaned_body"`
@@ -138,6 +184,7 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("error: Chirp is too long")
 		w.WriteHeader(400)
 		respBody.Valid = false
+		return
 
 	} else {
 		respBody.Valid = true
@@ -180,13 +227,15 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 
 	createChirpParam := database.CreateChirpParams{}
 	createChirpParam.Body = bodparam.Body
-	createChirpParam.UserID = uid
+	createChirpParam.UserID = userID
+	log.Print("CREATING CHIRP ON DB...")
 	chirp, err := cfg.dbQ.CreateChirp(r.Context(), createChirpParam)
 	if err != nil {
 		log.Printf("error: something went wrong creating chirp: %s", err)
 		w.WriteHeader(500)
 		return
 	} else {
+		log.Print("CREATING CHIRP ON DB OK!!!")
 		w.WriteHeader(201)
 		w.Header().Set("Content-Type", "application/json")
 		var chirpJson Chirp
@@ -198,7 +247,7 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 
 		chirpdat, err := json.Marshal(chirpJson)
 		if err != nil {
-			log.Printf("error: something went wrong creating user: %s", err)
+			log.Printf("NEWCHIRPHANDLER:: error: something went wrong creating chirp: %s", err)
 			w.WriteHeader(500)
 			return
 		} else {
@@ -272,15 +321,17 @@ func (cfg *apiConfig) getAChirpHandler(w http.ResponseWriter, r *http.Request) {
 
 // USER STUFF
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Token     string    `json:"token"`
+	ID           uuid.UUID `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Email        string    `json:"email"`
+	Token        string    `json:"token"`
+	RefreshToken string    `json:"refresh_token"`
 }
 
 // handler for creating user
 func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request) {
+
 	type bodyparam struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -339,6 +390,7 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request
 }
 
 func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
+	log.Print("##### IN LOGIN HANDLER! #####\n")
 
 	type bodyparam struct {
 		Email    string `json:"email"`
@@ -386,8 +438,11 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	userJson.ID = user.ID
 	userJson.UpdatedAt = user.UpdatedAt.Time
 
-	token, err := auth.MakeJWT(userJson.ID, cfg.secret, time.Duration(3600))
+	token, err := auth.MakeJWT(userJson.ID, cfg.secret, time.Duration(1)*time.Hour)
+	log.Printf("LOGINHANDLER: JWT TOKEN = %s \n", token)
+
 	refresh_token := auth.MakeRefreshToken()
+	log.Printf("LOGINHANDLER :: REFRESH_TOKEN = %s \n", refresh_token)
 	refresh_token_params := database.CreateRefreshTokenParams{}
 	refresh_token_params.Token = refresh_token
 	sixty_days := time.Duration(60*24) * time.Hour
@@ -396,15 +451,23 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		//Value: false,
 	}
 	refresh_token_params.ExpiresAt = expiry
-	refresh_token_params.UserID = userJson.ID
-	cfg.dbQ.CreateRefreshToken(r.Context(), refresh_token_params)
+	refresh_token_params.UserID = user.ID
+	refresh_token_from_db, err := cfg.dbQ.CreateRefreshToken(r.Context(), refresh_token_params)
+	if err != nil {
+		log.Printf("LOGINHANDLER: SOMETHING WENT WRONG WRITING REFRESH TOKEN TO DB %s", err)
+	}
+	log.Printf("LOGINHANDLER:: refresh token from db : %s \n", refresh_token_from_db.Token)
+
 	userJson.Token = token
+	userJson.RefreshToken = refresh_token
 	userdat, err := json.Marshal(userJson)
 	if err != nil {
-		log.Printf("error: something went wrong creating user: %d", err)
+		log.Printf("error: something went wrong creating user: %d\n", err)
 		w.WriteHeader(500)
 		return
 	}
+
+	//log.Printf("LOGINHANDLER USERDAT: %s \n", userdat)
 
 	w.WriteHeader(200)
 	w.Write(userdat)
@@ -413,27 +476,31 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
 	//get refresh token in the header
+	log.Print("###### AT REFRESHHANDLER!!! #####")
+
+	log.Printf("REFRESHHANDLER CONTENT-LENGTH: %d", r.ContentLength)
+
 	bearerToken, err := auth.GetBearerToken(r.Header)
 	if err != nil {
-		log.Printf("error: something went wrong getting bearer token: %s", err)
+		log.Printf("REFRESHHANDLER:: error: something went wrong getting bearer token: %s\n", err)
 	}
 
+	log.Printf("REFRESHHANDLER BEARER TOKEN: %s\n", bearerToken)
+	log.Printf("IS BEARER TOKEN JWT? %t\n", IsJWT(bearerToken))
 	//lookup refresh token in the database
 	token, err := cfg.dbQ.GetRefreshToken(r.Context(), bearerToken)
+	log.Printf("REFRESHHANDLER :: token from db: %s", token.Token)
 	if err != nil {
 		w.WriteHeader(401)
 		return
 	}
+
 	if token.ExpiresAt.Valid && token.ExpiresAt.Time.Before(time.Now()) {
-		// The sql.NullTime is past Now
-		// ie token is expired!
 		w.WriteHeader(401)
 		return
 	}
 
-	if token.RevokedAt.Valid && token.RevokedAt.Time.Before(time.Now()) {
-		// The sql.NullTime is past Now
-		// ie token is revoked!
+	if token.RevokedAt.Valid {
 		w.WriteHeader(401)
 		return
 	}
@@ -443,28 +510,58 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
 	refresh_token_params := database.CreateRefreshTokenParams{}
 	refresh_token_params.Token = refresh_token
 	one_hour := time.Duration(1) * time.Hour
-	expiry := sql.NullTime{
-		Time: time.Now().Add(one_hour),
-		//Value: false,
-	}
-	refresh_token_params.ExpiresAt = expiry
+
+	refresh_token_params.ExpiresAt.Time = time.Now().Add(one_hour)
 	refresh_token_params.UserID = token.UserID
-	cfg.dbQ.CreateRefreshToken(r.Context(), refresh_token_params)
+	saved_refresh_token, err := cfg.dbQ.CreateRefreshToken(r.Context(), refresh_token_params)
+	if err != nil {
+		log.Print("REFRESHHANDLER:: saving refresh token failed!")
+		w.WriteHeader(500)
+	}
+	log.Print("REFRESHHANDLER:: new refresh token saved in DB!")
 
 	type Token struct {
 		Token string `json:"token"`
 	}
 
 	var tokeJson Token
-	tokeJson.Token = refresh_token
+	tokeJson.Token = saved_refresh_token.Token
 	tokedat, err := json.Marshal(tokeJson)
 	if err != nil {
 		log.Print("error: something went wrong creating refresh token")
 		w.WriteHeader(500)
 		return
 	}
+
+	log.Printf("REFRESHHANDLER :: tokedat = %s\n", tokedat)
 	w.WriteHeader(200)
 	w.Write(tokedat)
+}
+
+func (cfg *apiConfig) revokeHandler(w http.ResponseWriter, r *http.Request) {
+
+	log.Print("#### IN REVOKEHANDLER !!! ###")
+	bearerToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		log.Printf("REVOKEHANDLER error: something went wrong getting bearer token: %s\n", err)
+	}
+
+	//lookup refresh token in the database
+	token, err := cfg.dbQ.GetRefreshToken(r.Context(), bearerToken)
+	if err != nil {
+		w.WriteHeader(401)
+		return
+	}
+
+	revoked_token, err := cfg.dbQ.RevokeRefreshToken(r.Context(), token.Token)
+	if err != nil {
+		log.Printf("REVOKEHANDLER:: error revoking token in db! %s\n", err)
+		w.WriteHeader(500)
+	}
+	log.Printf("REVOKEHANDLER:: revoked token: %s\n", revoked_token.Token)
+	log.Print("### REVOKEHANDLER OK..###")
+	w.WriteHeader(204)
+
 }
 
 func main() {
@@ -513,6 +610,8 @@ func main() {
 	mux.HandleFunc("POST /api/login", apiCfg.loginHandler)
 
 	mux.HandleFunc("POST /api/refresh", apiCfg.refreshHandler)
+
+	mux.HandleFunc("POST /api/revoke", apiCfg.revokeHandler)
 
 	mux.HandleFunc("POST /api/chirps", apiCfg.newChirpHandler)
 
