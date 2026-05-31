@@ -341,9 +341,8 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request
 func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	type bodyparam struct {
-		Email            string `json:"email"`
-		Password         string `json:"password"`
-		ExpiresInSeconds int    `json:"expires_in_seconds"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -357,7 +356,6 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("loginHandler:: param.Email = %s", param.Email)
 	log.Printf("loginHandler:: param.Password = %s", param.Password)
-	log.Printf("loginHandler:: param.ExpiresInSEconds = %d", param.ExpiresInSeconds)
 
 	//retrieve stored password hash from db
 
@@ -387,11 +385,19 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	userJson.Email = user.Email
 	userJson.ID = user.ID
 	userJson.UpdatedAt = user.UpdatedAt.Time
-	//expiresIn, err := strconv.Atoi(param.ExpiresInSeconds)
-	if param.ExpiresInSeconds <= 0 {
-		param.ExpiresInSeconds = 3600
+
+	token, err := auth.MakeJWT(userJson.ID, cfg.secret, time.Duration(3600))
+	refresh_token := auth.MakeRefreshToken()
+	refresh_token_params := database.CreateRefreshTokenParams{}
+	refresh_token_params.Token = refresh_token
+	sixty_days := time.Duration(60*24) * time.Hour
+	expiry := sql.NullTime{
+		Time: time.Now().Add(sixty_days),
+		//Value: false,
 	}
-	token, err := auth.MakeJWT(userJson.ID, cfg.secret, time.Duration(param.ExpiresInSeconds))
+
+	refresh_token_params.ExpiresAt = expiry
+	cfg.dbQ.CreateRefreshToken(r.Context(), refresh_token_params)
 	userJson.Token = token
 	userdat, err := json.Marshal(userJson)
 	if err != nil {
