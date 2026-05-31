@@ -395,8 +395,8 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		Time: time.Now().Add(sixty_days),
 		//Value: false,
 	}
-
 	refresh_token_params.ExpiresAt = expiry
+	refresh_token_params.UserID = userJson.ID
 	cfg.dbQ.CreateRefreshToken(r.Context(), refresh_token_params)
 	userJson.Token = token
 	userdat, err := json.Marshal(userJson)
@@ -410,6 +410,63 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(userdat)
 
 }
+
+func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
+	//get refresh token in the header
+	bearerToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		log.Printf("error: something went wrong getting bearer token: %s", err)
+	}
+
+	//lookup refresh token in the database
+	token, err := cfg.dbQ.GetRefreshToken(r.Context(), bearerToken)
+	if err != nil {
+		w.WriteHeader(401)
+		return
+	}
+	if token.ExpiresAt.Valid && token.ExpiresAt.Time.Before(time.Now()) {
+		// The sql.NullTime is past Now
+		// ie token is expired!
+		w.WriteHeader(401)
+		return
+	}
+
+	if token.RevokedAt.Valid && token.RevokedAt.Time.Before(time.Now()) {
+		// The sql.NullTime is past Now
+		// ie token is revoked!
+		w.WriteHeader(401)
+		return
+	}
+
+	//newtoken, err := auth.MakeJWT(userJson.ID, cfg.secret, time.Duration(3600))
+	refresh_token := auth.MakeRefreshToken()
+	refresh_token_params := database.CreateRefreshTokenParams{}
+	refresh_token_params.Token = refresh_token
+	one_hour := time.Duration(1) * time.Hour
+	expiry := sql.NullTime{
+		Time: time.Now().Add(one_hour),
+		//Value: false,
+	}
+	refresh_token_params.ExpiresAt = expiry
+	refresh_token_params.UserID = token.UserID
+	cfg.dbQ.CreateRefreshToken(r.Context(), refresh_token_params)
+
+	type Token struct {
+		Token string `json:"token"`
+	}
+
+	var tokeJson Token
+	tokeJson.Token = refresh_token
+	tokedat, err := json.Marshal(tokeJson)
+	if err != nil {
+		log.Print("error: something went wrong creating refresh token")
+		w.WriteHeader(500)
+		return
+	}
+	w.WriteHeader(200)
+	w.Write(tokedat)
+}
+
 func main() {
 
 	//handle db
@@ -454,6 +511,8 @@ func main() {
 	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
 
 	mux.HandleFunc("POST /api/login", apiCfg.loginHandler)
+
+	mux.HandleFunc("POST /api/refresh", apiCfg.refreshHandler)
 
 	mux.HandleFunc("POST /api/chirps", apiCfg.newChirpHandler)
 

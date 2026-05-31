@@ -16,9 +16,8 @@ VALUES(
         $4
     )
 RETURNING *;
--- name: GetLatestRefreshToken :one
+-- name: GetRefreshToken :one
 SELECT *
 FROM refresh_tokens
-WHERE user_id = $1
-ORDER BY created_at DESC
+WHERE token = $1
 LIMIT 1;
