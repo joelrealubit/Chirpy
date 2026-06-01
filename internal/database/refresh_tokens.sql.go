@@ -81,14 +81,19 @@ func (q *Queries) GetRefreshToken(ctx context.Context, token string) (RefreshTok
 
 const revokeRefreshToken = `-- name: RevokeRefreshToken :one
 UPDATE refresh_tokens
-SET revoked_at = NOW(),
+SET revoked_at = $2,
     updated_at = NOW()
 WHERE token = $1
 RETURNING token, created_at, updated_at, user_id, expires_at, revoked_at
 `
 
-func (q *Queries) RevokeRefreshToken(ctx context.Context, token string) (RefreshToken, error) {
-	row := q.db.QueryRowContext(ctx, revokeRefreshToken, token)
+type RevokeRefreshTokenParams struct {
+	Token     string
+	RevokedAt sql.NullTime
+}
+
+func (q *Queries) RevokeRefreshToken(ctx context.Context, arg RevokeRefreshTokenParams) (RefreshToken, error) {
+	row := q.db.QueryRowContext(ctx, revokeRefreshToken, arg.Token, arg.RevokedAt)
 	var i RefreshToken
 	err := row.Scan(
 		&i.Token,

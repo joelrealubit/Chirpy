@@ -106,7 +106,10 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("NEWCHIRPHANDLER R HEADER :: %s", r.Header)
+	log.Printf("NEWCHIRPHANDLER CHIRP BODY: %s\n", bodparam.Body)
+	log.Printf("NEWCHIRPHANDLER :: TOKEN : %s\n", bodparam.Token)
+	log.Printf("NEWCHIRPHANDLER :: REFRESH TOKEN: %s\n ", strings.TrimSpace(bodparam.RefreshToken))
+	log.Printf("NEWCHIRPHANDLER :: USERID : %s\n", bodparam.UserID)
 
 	bearerToken, err := auth.GetBearerToken(r.Header)
 	log.Printf("NEWCHIRPHANDLER:: bearerToken: %s\n", bearerToken)
@@ -122,11 +125,6 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		log.Print("NEWCHIPHANDLER:: BEARERTOKEN IS NOT JWT!")
 
 		refresh_token, err := cfg.dbQ.GetRefreshToken(r.Context(), bearerToken)
-		if refresh_token.Token != bearerToken {
-			log.Print("NEWCHIRPHANDLER :: BEARERTOKEN INVALID")
-			w.WriteHeader(401)
-			return
-		}
 
 		if err != nil {
 			log.Printf("NEWCHIRPHANDLER:: error getting refreshtoken from db: %s\n", err)
@@ -134,12 +132,22 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if refresh_token.Token != bearerToken {
+			log.Print("NEWCHIRPHANDLER :: BEARERTOKEN INVALID")
+			w.WriteHeader(401)
+			return
+		}
+
+		log.Printf("NEWCHIRPHANDLER:: ExpiresAt Valid %t\n", refresh_token.ExpiresAt.Valid)
+		log.Printf("NEWCHIRPHANDLER:: ExpiresAt Time %s\n", refresh_token.ExpiresAt.Time.String())
+
 		if refresh_token.ExpiresAt.Valid && refresh_token.ExpiresAt.Time.Before(time.Now()) {
 			log.Printf("NEWCHIRPHANDLER::NOTJWT:: error: refresh token expired: %s", err)
 			w.WriteHeader(401)
 			return
 		}
-
+		log.Printf("NEWCHIRPHANDLER:: RevokedAt Valid %t\n", refresh_token.RevokedAt.Valid)
+		log.Printf("NEWCHIRPHANDLER:: RevokedAt Time %s\n", refresh_token.RevokedAt.Time.String())
 		if refresh_token.RevokedAt.Valid {
 			log.Printf("NEWCHIRPHANDLER:: NOTJWT:: error: refresh token expired: %s \n", err)
 			w.WriteHeader(401)
@@ -158,17 +166,6 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		log.Print("NEWCHIRPHANDLER:: ValidateJWT OK!!!")
 		userID = uid
 
-		// log.Printf("NEWCHIRPHANDLER:: UID = %s || BODPARAM.USERID = %s \n", uid, bodparam.UserID)
-		// if uid != bodparam.UserID {
-		// 	log.Printf("NEWCHIRPHANDLER:: error: UID != BODPARAM.USERID: %s\n", err)
-		// 	w.WriteHeader(401)
-		// 	return
-		// }
-		// if bodparam.Token != bearerToken {
-		// 	log.Printf("NEWCHIRPHANDLER:: error: unauthorized: %s\n", err)
-		// 	w.WriteHeader(401)
-		// 	return
-		// }
 	}
 
 	type returnVal struct {
@@ -252,9 +249,11 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		} else {
 			w.Write(chirpdat)
-		}
+			log.Print("WRITING CHIRPDAT OK")
 
+		}
 	}
+	log.Print("####### NEWCHIRPHANDLER END!!!! ######")
 }
 
 func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request) {
@@ -444,20 +443,23 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	refresh_token := auth.MakeRefreshToken()
 	log.Printf("LOGINHANDLER :: REFRESH_TOKEN = %s \n", refresh_token)
 	refresh_token_params := database.CreateRefreshTokenParams{}
-	refresh_token_params.Token = refresh_token
+	refresh_token_params.Token = refresh_token //1
 	sixty_days := time.Duration(60*24) * time.Hour
 	expiry := sql.NullTime{
-		Time: time.Now().Add(sixty_days),
-		//Value: false,
+		Time:  time.Now().UTC().Add(sixty_days),
+		Valid: true,
 	}
-	refresh_token_params.ExpiresAt = expiry
-	refresh_token_params.UserID = user.ID
+	refresh_token_params.ExpiresAt = expiry //2
+	refresh_token_params.UserID = user.ID   //3
 	refresh_token_from_db, err := cfg.dbQ.CreateRefreshToken(r.Context(), refresh_token_params)
 	if err != nil {
 		log.Printf("LOGINHANDLER: SOMETHING WENT WRONG WRITING REFRESH TOKEN TO DB %s", err)
 	}
 	log.Printf("LOGINHANDLER:: refresh token from db : %s \n", refresh_token_from_db.Token)
-
+	log.Printf("LOGINHANDLER:: REFRESH TOKEN EXPIRES AT %s\n", refresh_token_from_db.ExpiresAt.Time.String())
+	log.Printf("LOGINHANDLER:: REFRESH TOKEN EXPIRES VALID %t\n", refresh_token_from_db.ExpiresAt.Valid)
+	log.Printf("LOGINHANDLER:: REFRESH TOKEN REVOKED AT %s\n", refresh_token_from_db.RevokedAt.Time.String())
+	log.Printf("LOGINHANDLER:: REFRESH TOKEN REVOKED VALID %t\n", refresh_token_from_db.RevokedAt.Valid)
 	userJson.Token = token
 	userJson.RefreshToken = refresh_token
 	userdat, err := json.Marshal(userJson)
@@ -467,7 +469,7 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//log.Printf("LOGINHANDLER USERDAT: %s \n", userdat)
+	log.Printf("LOGINHANDLER USERDAT: %s \n", userdat)
 
 	w.WriteHeader(200)
 	w.Write(userdat)
@@ -494,13 +496,22 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(401)
 		return
 	}
+	log.Printf("REFRESHHANDLER:: ExpiresAt Valid %t\n", token.ExpiresAt.Valid)
+	log.Printf("REFRESHHANDLER:: ExpiresAt Time %s\n", token.ExpiresAt.Time.String())
 
-	if token.ExpiresAt.Valid && token.ExpiresAt.Time.Before(time.Now()) {
+	if token.ExpiresAt.Valid && token.ExpiresAt.Time.Before(time.Now().UTC()) {
 		w.WriteHeader(401)
 		return
 	}
 
-	if token.RevokedAt.Valid {
+	log.Printf("REFRESHHANDLER:: RevokedAt Valid %t\n", token.RevokedAt.Valid)
+	log.Printf("REFRESHHANDLER:: RevokedAt Time %s\n", token.RevokedAt.Time.String())
+
+	timeNow := time.Now().UTC().Local()
+	log.Printf("REFRESHHANDLER:: TIMENOW: %s\n", timeNow)
+	log.Printf("REFRESHHANDLER:: REVOKEDAT TIME: %s\n", token.RevokedAt.Time)
+	log.Printf("REFRESHHANDLER IS REVOKED TIME IN THE PAST??? %t\n", token.RevokedAt.Time.UTC().Local().Before(timeNow))
+	if token.RevokedAt.Valid && token.RevokedAt.Time.Local().Before(timeNow) {
 		w.WriteHeader(401)
 		return
 	}
@@ -553,12 +564,19 @@ func (cfg *apiConfig) revokeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	revoked_token, err := cfg.dbQ.RevokeRefreshToken(r.Context(), token.Token)
+	var revokeParams database.RevokeRefreshTokenParams
+	revokeParams.Token = token.Token
+	revokeParams.RevokedAt = sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
+	revoked_token, err := cfg.dbQ.RevokeRefreshToken(r.Context(), revokeParams)
 	if err != nil {
 		log.Printf("REVOKEHANDLER:: error revoking token in db! %s\n", err)
 		w.WriteHeader(500)
 	}
 	log.Printf("REVOKEHANDLER:: revoked token: %s\n", revoked_token.Token)
+	log.Printf("REVOKEHANDLER:: REVOKED AT %s\n", revoked_token.RevokedAt.Time)
 	log.Print("### REVOKEHANDLER OK..###")
 	w.WriteHeader(204)
 

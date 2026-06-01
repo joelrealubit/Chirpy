@@ -4,7 +4,7 @@ CREATE TABLE refresh_tokens (
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
     user_id UUID NOT NULL,
-    expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '7 days'),
+    expires_at TIMESTAMP,
     revoked_at TIMESTAMP,
     CONSTRAINT fk_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
