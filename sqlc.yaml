@@ -6,3 +6,6 @@ sql:
     gen:
       go:
         out: "internal/database"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"
