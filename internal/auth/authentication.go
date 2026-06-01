@@ -29,7 +29,7 @@ func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (str
 
 	claims := jwt.RegisteredClaims{}
 	claims.Issuer = "chirpy-access"
-	now := time.Now().UTC()
+	now := time.Now().UTC().Local()
 	claims.IssuedAt = jwt.NewNumericDate(now)
 	claims.ExpiresAt = jwt.NewNumericDate(now.Add(expiresIn))
 	claims.Subject = userID.String()

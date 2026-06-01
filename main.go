@@ -106,10 +106,10 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("NEWCHIRPHANDLER CHIRP BODY: %s\n", bodparam.Body)
-	log.Printf("NEWCHIRPHANDLER :: TOKEN : %s\n", bodparam.Token)
-	log.Printf("NEWCHIRPHANDLER :: REFRESH TOKEN: %s\n ", strings.TrimSpace(bodparam.RefreshToken))
-	log.Printf("NEWCHIRPHANDLER :: USERID : %s\n", bodparam.UserID)
+	// log.Printf("NEWCHIRPHANDLER CHIRP BODY: %s\n", bodparam.Body)
+	// log.Printf("NEWCHIRPHANDLER :: TOKEN : %s\n", bodparam.Token)
+	// log.Printf("NEWCHIRPHANDLER :: REFRESH TOKEN: %s\n ", strings.TrimSpace(bodparam.RefreshToken))
+	// log.Printf("NEWCHIRPHANDLER :: USERID : %s\n", bodparam.UserID)
 
 	bearerToken, err := auth.GetBearerToken(r.Header)
 	log.Printf("NEWCHIRPHANDLER:: bearerToken: %s\n", bearerToken)
@@ -122,7 +122,7 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 	var userID uuid.UUID
 
 	if !IsJWT(bearerToken) {
-		log.Print("NEWCHIPHANDLER:: BEARERTOKEN IS NOT JWT!")
+		log.Print("NEWCHIPHANDLER:: BEARERTOKEN IS NOT JWT! ITS A REFRESH TOKEN!!!")
 
 		refresh_token, err := cfg.dbQ.GetRefreshToken(r.Context(), bearerToken)
 
@@ -138,25 +138,20 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Printf("NEWCHIRPHANDLER:: ExpiresAt Valid %t\n", refresh_token.ExpiresAt.Valid)
-		log.Printf("NEWCHIRPHANDLER:: ExpiresAt Time %s\n", refresh_token.ExpiresAt.Time.String())
-
-		if refresh_token.ExpiresAt.Valid && refresh_token.ExpiresAt.Time.Before(time.Now()) {
+		if refresh_token.ExpiresAt.Valid && refresh_token.ExpiresAt.Time.UTC().Local().Before(time.Now().UTC().Local()) {
 			log.Printf("NEWCHIRPHANDLER::NOTJWT:: error: refresh token expired: %s", err)
 			w.WriteHeader(401)
 			return
 		}
-		log.Printf("NEWCHIRPHANDLER:: RevokedAt Valid %t\n", refresh_token.RevokedAt.Valid)
-		log.Printf("NEWCHIRPHANDLER:: RevokedAt Time %s\n", refresh_token.RevokedAt.Time.String())
-		if refresh_token.RevokedAt.Valid {
+		if refresh_token.RevokedAt.Valid && refresh_token.RevokedAt.Time.UTC().Local().Before(time.Now().UTC().Local()) {
 			log.Printf("NEWCHIRPHANDLER:: NOTJWT:: error: refresh token expired: %s \n", err)
 			w.WriteHeader(401)
 			return
 		}
 		userID = refresh_token.UserID
-		log.Print("NEWCHIRPHANDLER:: NOT JWT OK!!!\n")
+		log.Print("NEWCHIRPHANDLER:: REFRESH TOKEN OK!!!\n")
 	} else {
-		log.Print("NEWCHIRPHANDLER:: IS JWT!!!\n")
+		log.Print("NEWCHIRPHANDLER:: BEARER TOKEN IS JWT!!!\n")
 		uid, err := auth.ValidateJWT(bearerToken, cfg.secret)
 		if err != nil {
 			log.Printf("NEWCHIRPHANDLER:: error: auth.ValidateJWT failed->unauthorized: %s \n", err)
@@ -187,12 +182,6 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		respBody.Valid = true
 	}
 
-	// curseWords := map[string]string{
-	// 	"kerfuffle": "kerfuffle",
-	// 	"sharbert":  "sharbert",
-	// 	"fornax":    "fornax",
-	// }
-
 	curseWords := []string{"kerfuffle", "sharbert", "fornax"}
 
 	//replace curse words with asterisk
@@ -208,13 +197,9 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 
 	newBody = strings.Join(parts, " ")
 
-	//}
-
 	if strings.Contains(newBody, "****") {
 		bodparam.Body = newBody
 	}
-
-	//respBody.Body = bodparam.Body
 
 	w.Header().Set("Content-Type", "application/json")
 	if !respBody.Valid {
@@ -231,28 +216,26 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("error: something went wrong creating chirp: %s", err)
 		w.WriteHeader(500)
 		return
-	} else {
-		log.Print("CREATING CHIRP ON DB OK!!!")
-		w.WriteHeader(201)
-		w.Header().Set("Content-Type", "application/json")
-		var chirpJson Chirp
-		chirpJson.ID = chirp.ID
-		chirpJson.CreatedAt = chirp.CreatedAt.Time
-		chirpJson.Body = chirp.Body
-		chirpJson.UpdatedAt = chirp.UpdatedAt.Time
-		chirpJson.UserID = chirp.UserID
-
-		chirpdat, err := json.Marshal(chirpJson)
-		if err != nil {
-			log.Printf("NEWCHIRPHANDLER:: error: something went wrong creating chirp: %s", err)
-			w.WriteHeader(500)
-			return
-		} else {
-			w.Write(chirpdat)
-			log.Print("WRITING CHIRPDAT OK")
-
-		}
 	}
+	log.Print("CREATING CHIRP ON DB OK!!!")
+	w.WriteHeader(201)
+	w.Header().Set("Content-Type", "application/json")
+	var chirpJson Chirp
+	chirpJson.ID = chirp.ID
+	chirpJson.CreatedAt = chirp.CreatedAt.Time
+	chirpJson.Body = chirp.Body
+	chirpJson.UpdatedAt = chirp.UpdatedAt.Time
+	chirpJson.UserID = chirp.UserID
+
+	chirpdat, err := json.Marshal(chirpJson)
+	if err != nil {
+		log.Printf("NEWCHIRPHANDLER:: error: something went wrong creating chirp: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+	w.Write(chirpdat)
+	log.Print("WRITING CHIRPDAT OK")
+
 	log.Print("####### NEWCHIRPHANDLER END!!!! ######")
 }
 
@@ -289,14 +272,14 @@ func (cfg *apiConfig) getAChirpHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("id_param = %s", id_param)
 	id, err := uuid.Parse(id_param)
 	if err != nil {
-		log.Printf("error: something went wrong: %s", err)
+		log.Printf("GETACHIRPHANDLER:: error: something went wrong: %s", err)
 		w.WriteHeader(500)
 		return
 	}
 
 	chirp, err := cfg.dbQ.GetAChirp(r.Context(), id)
 	if err != nil {
-		log.Printf("error: something went wrong: %s", err)
+		log.Printf("GETACHIRPHANDLER:: error: something went wrong: %s", err)
 		w.WriteHeader(404)
 		return
 	}
@@ -310,7 +293,7 @@ func (cfg *apiConfig) getAChirpHandler(w http.ResponseWriter, r *http.Request) {
 
 	chirpdat, err := json.Marshal(chirpJson)
 	if err != nil {
-		log.Printf("error: something went wrong: %s", err)
+		log.Printf("GETACHIRPHANDLER:: error: something went wrong: %s", err)
 		w.WriteHeader(500)
 		return
 	}
@@ -446,7 +429,7 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	refresh_token_params.Token = refresh_token //1
 	sixty_days := time.Duration(60*24) * time.Hour
 	expiry := sql.NullTime{
-		Time:  time.Now().UTC().Add(sixty_days),
+		Time:  time.Now().UTC().Local().Add(sixty_days),
 		Valid: true,
 	}
 	refresh_token_params.ExpiresAt = expiry //2
@@ -455,13 +438,9 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("LOGINHANDLER: SOMETHING WENT WRONG WRITING REFRESH TOKEN TO DB %s", err)
 	}
-	log.Printf("LOGINHANDLER:: refresh token from db : %s \n", refresh_token_from_db.Token)
-	log.Printf("LOGINHANDLER:: REFRESH TOKEN EXPIRES AT %s\n", refresh_token_from_db.ExpiresAt.Time.String())
-	log.Printf("LOGINHANDLER:: REFRESH TOKEN EXPIRES VALID %t\n", refresh_token_from_db.ExpiresAt.Valid)
-	log.Printf("LOGINHANDLER:: REFRESH TOKEN REVOKED AT %s\n", refresh_token_from_db.RevokedAt.Time.String())
-	log.Printf("LOGINHANDLER:: REFRESH TOKEN REVOKED VALID %t\n", refresh_token_from_db.RevokedAt.Valid)
+
 	userJson.Token = token
-	userJson.RefreshToken = refresh_token
+	userJson.RefreshToken = refresh_token_from_db.Token
 	userdat, err := json.Marshal(userJson)
 	if err != nil {
 		log.Printf("error: something went wrong creating user: %d\n", err)
@@ -499,19 +478,12 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("REFRESHHANDLER:: ExpiresAt Valid %t\n", token.ExpiresAt.Valid)
 	log.Printf("REFRESHHANDLER:: ExpiresAt Time %s\n", token.ExpiresAt.Time.String())
 
-	if token.ExpiresAt.Valid && token.ExpiresAt.Time.Before(time.Now().UTC()) {
+	if token.ExpiresAt.Valid && token.ExpiresAt.Time.UTC().Local().Before(time.Now().UTC().Local()) {
 		w.WriteHeader(401)
 		return
 	}
 
-	log.Printf("REFRESHHANDLER:: RevokedAt Valid %t\n", token.RevokedAt.Valid)
-	log.Printf("REFRESHHANDLER:: RevokedAt Time %s\n", token.RevokedAt.Time.String())
-
-	timeNow := time.Now().UTC().Local()
-	log.Printf("REFRESHHANDLER:: TIMENOW: %s\n", timeNow)
-	log.Printf("REFRESHHANDLER:: REVOKEDAT TIME: %s\n", token.RevokedAt.Time)
-	log.Printf("REFRESHHANDLER IS REVOKED TIME IN THE PAST??? %t\n", token.RevokedAt.Time.UTC().Local().Before(timeNow))
-	if token.RevokedAt.Valid && token.RevokedAt.Time.Local().Before(timeNow) {
+	if token.RevokedAt.Valid && token.RevokedAt.Time.UTC().Local().Before(time.Now().UTC().Local()) {
 		w.WriteHeader(401)
 		return
 	}
