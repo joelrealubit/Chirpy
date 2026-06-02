@@ -56,7 +56,7 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	} else {
 		log.Print("unknown claims type, cannot proceed")
 		return err_id, errors.New("unknown claims type, cannot proceed")
-		//log.Fatal("unknown claims type, cannot proceed")
+
 	}
 
 	subj, err := token.Claims.GetSubject()

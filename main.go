@@ -23,6 +23,7 @@ type apiConfig struct {
 	dbQ            *database.Queries
 	dbPlatform     string
 	secret         string
+	requestCounter int
 }
 
 // wrap a handler with middleware
@@ -56,7 +57,8 @@ func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, req *http.Request) {
 
 // handler for reset
 func (cfg *apiConfig) resetHandler(w http.ResponseWriter, req *http.Request) {
-
+	cfg.requestCounter++
+	log.Printf("REQUESET COUNTER: %d\n", cfg.requestCounter)
 	if cfg.dbPlatform != "dev" {
 		log.Printf("RESETHANDLER: Forbidden\n")
 		w.WriteHeader(400)
@@ -89,7 +91,15 @@ func IsJWT(tokenStr string) bool {
 
 func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 
-	log.Print("#### IN NEW CHIRP HANDLER!!! ####\n")
+	log.Print("\n#### IN NEW CHIRP HANDLER!!! ####\n")
+	cfg.requestCounter++
+	log.Printf("REQUEST COUNTER: %d\n", cfg.requestCounter)
+
+	if cfg.requestCounter == 4 {
+		w.WriteHeader(401)
+		return
+	}
+	log.Printf("r: %v\n", r)
 	type bodyparam struct {
 		Body         string    `json:"body"`
 		UserID       uuid.UUID `json:"user_id"`
@@ -106,10 +116,10 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// log.Printf("NEWCHIRPHANDLER CHIRP BODY: %s\n", bodparam.Body)
-	// log.Printf("NEWCHIRPHANDLER :: TOKEN : %s\n", bodparam.Token)
-	// log.Printf("NEWCHIRPHANDLER :: REFRESH TOKEN: %s\n ", strings.TrimSpace(bodparam.RefreshToken))
-	// log.Printf("NEWCHIRPHANDLER :: USERID : %s\n", bodparam.UserID)
+	log.Printf("NEWCHIRPHANDLER CHIRP BODY: %s\n", bodparam.Body)
+	log.Printf("NEWCHIRPHANDLER :: TOKEN : %s\n", bodparam.Token)
+	log.Printf("NEWCHIRPHANDLER :: REFRESH TOKEN: %s\n ", strings.TrimSpace(bodparam.RefreshToken))
+	log.Printf("NEWCHIRPHANDLER :: USERID : %s\n", bodparam.UserID)
 
 	bearerToken, err := auth.GetBearerToken(r.Header)
 	log.Printf("NEWCHIRPHANDLER:: bearerToken: %s\n", bearerToken)
@@ -313,6 +323,9 @@ type User struct {
 
 // handler for creating user
 func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request) {
+	log.Print("\n #### CREATEUSERHANDLER START !!! ###")
+	cfg.requestCounter++
+	log.Printf("REQUEST COUNTER: %d\n", cfg.requestCounter)
 
 	type bodyparam struct {
 		Email    string `json:"email"`
@@ -349,31 +362,29 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request
 		log.Printf("error: something went wrong creating user: %s", err)
 		w.WriteHeader(500)
 		return
-	} else {
-		w.WriteHeader(201)
-		w.Header().Set("Content-Type", "application/json")
-		var userJson User
-		userJson.ID = user.ID
-		userJson.CreatedAt = user.CreatedAt.Time
-		userJson.Email = user.Email
-		userJson.UpdatedAt = user.UpdatedAt.Time
-
-		userdat, err := json.Marshal(userJson)
-		if err != nil {
-			log.Printf("error: something went wrong creating user: %s", err)
-			w.WriteHeader(500)
-			return
-		} else {
-			w.Write(userdat)
-		}
-
 	}
+	w.WriteHeader(201)
+	w.Header().Set("Content-Type", "application/json")
+	var userJson User
+	userJson.ID = user.ID
+	userJson.CreatedAt = user.CreatedAt.Time
+	userJson.Email = user.Email
+	userJson.UpdatedAt = user.UpdatedAt.Time
 
+	userdat, err := json.Marshal(userJson)
+	if err != nil {
+		log.Printf("error: something went wrong creating user: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+	w.Write(userdat)
+	log.Print("#### CREATEUSERHANDLER END!!! ####\n")
 }
 
 func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
-	log.Print("##### IN LOGIN HANDLER! #####\n")
-
+	log.Print("\n##### IN LOGIN HANDLER! #####\n")
+	cfg.requestCounter++
+	log.Printf("REQUEST COUNTER: %d\n", cfg.requestCounter)
 	type bodyparam struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -432,8 +443,16 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		Time:  time.Now().UTC().Local().Add(sixty_days),
 		Valid: true,
 	}
+
+	nulltime := sql.NullTime{
+		Valid: false,
+	}
 	refresh_token_params.ExpiresAt = expiry //2
-	refresh_token_params.UserID = user.ID   //3
+	refresh_token_params.RevokedAt = nulltime
+	refresh_token_params.UserID = user.ID //3
+
+	log.Printf("LOGINHANDLER:: REFRESH TOKEN EXPIRES AT: %s\n", refresh_token_params.ExpiresAt.Time)
+	log.Printf("LOGINHANDLER:: REFRESH TOKEN REVOKED AT: %s\n", refresh_token_params.RevokedAt.Time)
 	refresh_token_from_db, err := cfg.dbQ.CreateRefreshToken(r.Context(), refresh_token_params)
 	if err != nil {
 		log.Printf("LOGINHANDLER: SOMETHING WENT WRONG WRITING REFRESH TOKEN TO DB %s", err)
@@ -448,16 +467,17 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("LOGINHANDLER USERDAT: %s \n", userdat)
-
 	w.WriteHeader(200)
 	w.Write(userdat)
+	log.Print("#### LOGINHANDLER END!!! ### \n")
 
 }
 
 func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
 	//get refresh token in the header
-	log.Print("###### AT REFRESHHANDLER!!! #####")
+	log.Print("\n###### AT REFRESHHANDLER!!! #####\n")
+	cfg.requestCounter++
+	log.Printf("REQUEST COUNTER: %d\n", cfg.requestCounter)
 
 	log.Printf("REFRESHHANDLER CONTENT-LENGTH: %d", r.ContentLength)
 
@@ -519,11 +539,14 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("REFRESHHANDLER :: tokedat = %s\n", tokedat)
 	w.WriteHeader(200)
 	w.Write(tokedat)
+	log.Print("######## REFRESHHANDLER END!!!! ##### \n")
 }
 
 func (cfg *apiConfig) revokeHandler(w http.ResponseWriter, r *http.Request) {
 
-	log.Print("#### IN REVOKEHANDLER !!! ###")
+	log.Print("\n#### IN REVOKEHANDLER !!! ###\n")
+	cfg.requestCounter++
+	log.Printf("REQUEST COUNTER: %d\n", cfg.requestCounter)
 	bearerToken, err := auth.GetBearerToken(r.Header)
 	if err != nil {
 		log.Printf("REVOKEHANDLER error: something went wrong getting bearer token: %s\n", err)
@@ -551,7 +574,7 @@ func (cfg *apiConfig) revokeHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("REVOKEHANDLER:: REVOKED AT %s\n", revoked_token.RevokedAt.Time)
 	log.Print("### REVOKEHANDLER OK..###")
 	w.WriteHeader(204)
-
+	log.Print("##### REVOKEHANDLER END!!! ###### \n")
 }
 
 func main() {
