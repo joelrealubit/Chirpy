@@ -116,11 +116,6 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("NEWCHIRPHANDLER CHIRP BODY: %s\n", bodparam.Body)
-	log.Printf("NEWCHIRPHANDLER :: TOKEN : %s\n", bodparam.Token)
-	log.Printf("NEWCHIRPHANDLER :: REFRESH TOKEN: %s\n ", strings.TrimSpace(bodparam.RefreshToken))
-	log.Printf("NEWCHIRPHANDLER :: USERID : %s\n", bodparam.UserID)
-
 	bearerToken, err := auth.GetBearerToken(r.Header)
 	log.Printf("NEWCHIRPHANDLER:: bearerToken: %s\n", bearerToken)
 
@@ -129,11 +124,12 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(401)
 		return
 	}
+	//userID for writing chirp
 	var userID uuid.UUID
 
+	//determine userId depending on if bearer token is JWT or refresh token
 	if !IsJWT(bearerToken) {
 		log.Print("NEWCHIPHANDLER:: BEARERTOKEN IS NOT JWT! ITS A REFRESH TOKEN!!!")
-
 		refresh_token, err := cfg.dbQ.GetRefreshToken(r.Context(), bearerToken)
 
 		if err != nil {
@@ -212,11 +208,12 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if !respBody.Valid {
-		w.WriteHeader(500)
-		return
-	}
+	// if !respBody.Valid {
+	// 	w.WriteHeader(500)
+	// 	return
+	// }
 
+	//persist sanitized new chirp
 	createChirpParam := database.CreateChirpParams{}
 	createChirpParam.Body = bodparam.Body
 	createChirpParam.UserID = userID
@@ -230,6 +227,8 @@ func (cfg *apiConfig) newChirpHandler(w http.ResponseWriter, r *http.Request) {
 	log.Print("CREATING CHIRP ON DB OK!!!")
 	w.WriteHeader(201)
 	w.Header().Set("Content-Type", "application/json")
+
+	//compose json response
 	var chirpJson Chirp
 	chirpJson.ID = chirp.ID
 	chirpJson.CreatedAt = chirp.CreatedAt.Time
@@ -432,8 +431,8 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	userJson.UpdatedAt = user.UpdatedAt.Time
 
 	token, err := auth.MakeJWT(userJson.ID, cfg.secret, time.Duration(1)*time.Hour)
-	log.Printf("LOGINHANDLER: JWT TOKEN = %s \n", token)
 
+	//make refresh token
 	refresh_token := auth.MakeRefreshToken()
 	log.Printf("LOGINHANDLER :: REFRESH_TOKEN = %s \n", refresh_token)
 	refresh_token_params := database.CreateRefreshTokenParams{}
@@ -451,13 +450,13 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	refresh_token_params.RevokedAt = nulltime
 	refresh_token_params.UserID = user.ID //3
 
-	log.Printf("LOGINHANDLER:: REFRESH TOKEN EXPIRES AT: %s\n", refresh_token_params.ExpiresAt.Time)
-	log.Printf("LOGINHANDLER:: REFRESH TOKEN REVOKED AT: %s\n", refresh_token_params.RevokedAt.Time)
+	//persist refresh token
 	refresh_token_from_db, err := cfg.dbQ.CreateRefreshToken(r.Context(), refresh_token_params)
 	if err != nil {
 		log.Printf("LOGINHANDLER: SOMETHING WENT WRONG WRITING REFRESH TOKEN TO DB %s", err)
 	}
 
+	//compose json response
 	userJson.Token = token
 	userJson.RefreshToken = refresh_token_from_db.Token
 	userdat, err := json.Marshal(userJson)
@@ -486,8 +485,6 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("REFRESHHANDLER:: error: something went wrong getting bearer token: %s\n", err)
 	}
 
-	log.Printf("REFRESHHANDLER BEARER TOKEN: %s\n", bearerToken)
-	log.Printf("IS BEARER TOKEN JWT? %t\n", IsJWT(bearerToken))
 	//lookup refresh token in the database
 	token, err := cfg.dbQ.GetRefreshToken(r.Context(), bearerToken)
 	log.Printf("REFRESHHANDLER :: token from db: %s", token.Token)
@@ -495,8 +492,6 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(401)
 		return
 	}
-	log.Printf("REFRESHHANDLER:: ExpiresAt Valid %t\n", token.ExpiresAt.Valid)
-	log.Printf("REFRESHHANDLER:: ExpiresAt Time %s\n", token.ExpiresAt.Time.String())
 
 	if token.ExpiresAt.Valid && token.ExpiresAt.Time.UTC().Local().Before(time.Now().UTC().Local()) {
 		w.WriteHeader(401)
@@ -508,7 +503,6 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//newtoken, err := auth.MakeJWT(userJson.ID, cfg.secret, time.Duration(3600))
 	refresh_token := auth.MakeRefreshToken()
 	refresh_token_params := database.CreateRefreshTokenParams{}
 	refresh_token_params.Token = refresh_token
