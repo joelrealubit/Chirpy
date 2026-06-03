@@ -46,15 +46,15 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	claims := jwt.RegisteredClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, &claims, func(token *jwt.Token) (interface{}, error) {
 		return []byte(tokenSecret), nil
-	}, jwt.WithLeeway(5*time.Second))
+	})
 	if err != nil {
 		log.Printf("FAIL: %s", err)
 		return err_id, err
 		//log.Fatal(err)
 	} else if claims, ok := token.Claims.(*jwt.RegisteredClaims); ok {
-		fmt.Println(claims.Issuer)
+		fmt.Printf("VALIDATE JWT:: CLAIMS ISSUER %s\n", claims.Issuer)
 	} else {
-		log.Print("unknown claims type, cannot proceed")
+		log.Print("VALIDATE JWT:: unknown claims type, cannot proceed")
 		return err_id, errors.New("unknown claims type, cannot proceed")
 
 	}
@@ -65,7 +65,7 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 		return err_id, err
 	}
 	id, err := uuid.Parse(subj)
-	log.Printf("ok uuid = %s", id)
+	log.Printf("VALIDATE JWT:: ok uuid = %s", id)
 	return id, err
 
 }
@@ -91,4 +91,9 @@ func MakeRefreshToken() string {
 	key := make([]byte, 32)
 	rand.Read(key)
 	return hex.EncodeToString(key)
+}
+
+func IsJWT(tokenStr string) bool {
+	parts := strings.Split(tokenStr, ".")
+	return len(parts) == 3
 }

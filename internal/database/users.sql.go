@@ -93,3 +93,35 @@ func (q *Queries) GetUserById(ctx context.Context, id uuid.UUID) (User, error) {
 	)
 	return i, err
 }
+
+const updateEmail = `-- name: UpdateEmail :exec
+UPDATE users
+SET email = $2
+WHERE id = $1
+`
+
+type UpdateEmailParams struct {
+	ID    uuid.UUID
+	Email string
+}
+
+func (q *Queries) UpdateEmail(ctx context.Context, arg UpdateEmailParams) error {
+	_, err := q.db.ExecContext(ctx, updateEmail, arg.ID, arg.Email)
+	return err
+}
+
+const updatePassword = `-- name: UpdatePassword :exec
+UPDATE users
+SET userpassword = $2
+WHERE id = $1
+`
+
+type UpdatePasswordParams struct {
+	ID           uuid.UUID
+	Userpassword string
+}
+
+func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error {
+	_, err := q.db.ExecContext(ctx, updatePassword, arg.ID, arg.Userpassword)
+	return err
+}

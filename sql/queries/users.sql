@@ -22,5 +22,13 @@ WHERE email = $1;
 SELECT *
 FROM users
 WHERE id = $1;
+-- name: UpdateEmail :exec
+UPDATE users
+SET email = $2
+WHERE id = $1;
+-- name: UpdatePassword :exec
+UPDATE users
+SET userpassword = $2
+WHERE id = $1;
 -- name: DeleteUsers :exec
 DELETE FROM users;
